@@ -10,6 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QPalette
+from shiboken6 import isValid
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -608,12 +609,18 @@ class OpenSteamToolsWindow(QMainWindow):
         self.target_rgb = (255, 127, 0)
         self.color_index = 1
         self.fade_step = 0
-        self.credits_timer = QTimer(self)
+        self.credits_timer = QTimer(page)
         self.credits_timer.timeout.connect(self.animate_rainbow_fade)
+        page.destroyed.connect(self.credits_timer.stop)
         self.credits_timer.start(50)
         return page
 
     def animate_rainbow_fade(self):
+        if not getattr(self, "credits_label", None) or not isValid(self.credits_label):
+            if getattr(self, "credits_timer", None) and isValid(self.credits_timer):
+                self.credits_timer.stop()
+            return
+
         red1, green1, blue1 = self.current_rgb
         red2, green2, blue2 = self.target_rgb
         step_fraction = self.fade_step / 15
