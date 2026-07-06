@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 
+icon_path = 'app.ico' if os.path.exists('app.ico') else None
 
 a = Analysis(
     ['OpenSteamtools.py'],
@@ -35,5 +37,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['app.ico'],
+    icon=icon_path,
 )

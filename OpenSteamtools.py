@@ -1,9 +1,11 @@
 import os
 import shutil
+import sys
 import requests
 import zipfile
 import datetime
 from bs4 import BeautifulSoup
+from pathlib import Path
 from urllib.parse import quote_plus
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
@@ -17,16 +19,105 @@ from tkinter import messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
 
+def steam_config_candidates():
+    env_path = os.environ.get("STEAM_CONFIG_DIR")
+    candidates = [Path(env_path).expanduser()] if env_path else []
+    home = Path.home()
+
+    if sys.platform.startswith("win"):
+        program_files_x86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+        program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+        candidates.extend([
+            Path(program_files_x86) / "Steam" / "config",
+            Path(program_files) / "Steam" / "config",
+        ])
+    elif sys.platform == "darwin":
+        candidates.append(home / "Library" / "Application Support" / "Steam" / "config")
+    else:
+        candidates.extend([
+            home / ".steam" / "steam" / "config",
+            home / ".local" / "share" / "Steam" / "config",
+            home / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam" / "config",
+        ])
+
+    return candidates
+
+
+def resolve_steam_config_dir():
+    candidates = steam_config_candidates()
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def resolve_geckodriver_path():
+    env_path = os.environ.get("GECKODRIVER")
+    if env_path and Path(env_path).expanduser().exists():
+        return str(Path(env_path).expanduser())
+
+    found = shutil.which("geckodriver")
+    if found:
+        return found
+
+    suffix = ".exe" if sys.platform.startswith("win") else ""
+    download_path = Path.home() / "Downloads" / f"geckodriver{suffix}"
+    if download_path.exists():
+        return str(download_path)
+
+    return None
+
+
+def resolve_firefox_binary():
+    env_path = os.environ.get("FIREFOX_BINARY")
+    if env_path and Path(env_path).expanduser().exists():
+        return str(Path(env_path).expanduser())
+
+    if sys.platform.startswith("win"):
+        candidates = [
+            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Mozilla Firefox" / "firefox.exe",
+            Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")) / "Mozilla Firefox" / "firefox.exe",
+        ]
+    elif sys.platform == "darwin":
+        candidates = [Path("/Applications/Firefox.app/Contents/MacOS/firefox")]
+    else:
+        candidates = [
+            Path("/usr/bin/firefox"),
+            Path("/usr/local/bin/firefox"),
+            Path("/snap/bin/firefox"),
+            Path("/var/lib/flatpak/exports/bin/org.mozilla.firefox"),
+            Path.home() / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.mozilla.firefox",
+        ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return shutil.which("firefox")
+
+
+def safe_extract_zip(zip_ref, target_dir):
+    target_path = Path(target_dir).resolve()
+    for member in zip_ref.infolist():
+        member_path = (target_path / member.filename).resolve()
+        if target_path != member_path and target_path not in member_path.parents:
+            raise ValueError(f"Blocked unsafe zip entry: {member.filename}")
+    zip_ref.extractall(target_path)
+
+
 class ModDownloader:
     def __init__(self, root):
         self.root = root
-        self.MANIFEST_DIR = r"C:\Program Files (x86)\Steam\config\depotcache"
-        self.LUA_ST_DIR = r"C:\Program Files (x86)\Steam\config\stplug-in"
-        self.driver_path = os.path.join(os.path.expanduser("~"), "Downloads", "geckodriver.exe")
+        self.steam_config_dir = resolve_steam_config_dir()
+        self.MANIFEST_DIR = str(self.steam_config_dir / "depotcache")
+        self.LUA_ST_DIR = str(self.steam_config_dir / "stplug-in")
+        self.driver_path = resolve_geckodriver_path()
         self.options = webdriver.FirefoxOptions()
-        self.options.binary_location = r"C:\Program Files\Mozilla Firefox\firefox.exe"
+        firefox_binary = resolve_firefox_binary()
+        if firefox_binary:
+            self.options.binary_location = firefox_binary
         self.options.add_argument("--headless")
-        self.service = Service(self.driver_path)
+        self.service = Service(self.driver_path) if self.driver_path else Service()
         self.window_stack = []  # will hold screen function references
         self.app_id = "383980"  # default app ID
 
@@ -85,6 +176,12 @@ class ModDownloader:
     # ----------------- Main Menu -----------------
     def main_menu(self):
         tb.Label(self.root, text="Main Menu", font=("Segoe UI", 24, "bold")).pack(pady=20)
+        tb.Label(
+            self.root,
+            text=f"Steam config: {self.steam_config_dir}",
+            font=("Segoe UI", 9),
+            wraplength=640,
+        ).pack(pady=5)
 
         tb.Button(self.root, text="Mod Downloader",
                   bootstyle="primary outline", width=20,
@@ -193,9 +290,10 @@ class ModDownloader:
                     r.raise_for_status()
                     with open(zip_path, "wb") as f:
                         for chunk in r.iter_content(chunk_size=8192):
-                            f.write(chunk)
+                            if chunk:
+                                f.write(chunk)
                 with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                    zip_ref.extractall("workshop_mod")
+                    safe_extract_zip(zip_ref, "workshop_mod")
                 os.remove(zip_path)
                 self._log(f"✅ Installed mod from {url} ({download_link})")
                 messagebox.showinfo("Success", "Mod installed successfully!")
@@ -210,6 +308,12 @@ class ModDownloader:
         self.add_return_arrow()
         tb.Label(self.root, text="Lua & Manifests", font=("Segoe UI", 20, "bold")).pack(pady=20)
         tb.Label(self.root, text="Drag and drop files here:").pack(pady=10)
+        tb.Label(
+            self.root,
+            text=f"Manifest target: {self.MANIFEST_DIR}\nLua target: {self.LUA_ST_DIR}",
+            font=("Segoe UI", 9),
+            wraplength=640,
+        ).pack(pady=5)
 
         # Create a Canvas for the drop area
         canvas = tk.Canvas(self.root, width=400, height=100, bg="#444")
@@ -221,17 +325,13 @@ class ModDownloader:
         # Register drop area
         self.root.drop_target_register(DND_FILES)
         self.root.dnd_bind("<<Drop>>", self.drop)
-        
+
         # Attach the canvas to the root window
         canvas.drop_target_register(DND_FILES)
         canvas.dnd_bind("<<Drop>>", self.drop)
 
-
-
-
-
     def drop(self, event):
-        for file in event.data.split():
+        for file in self.root.tk.splitlist(event.data):
             target_dir = None
             if file.endswith('.manifest'):
                 target_dir = self.MANIFEST_DIR
@@ -239,10 +339,13 @@ class ModDownloader:
                 target_dir = self.LUA_ST_DIR
             if target_dir:
                 try:
+                    os.makedirs(target_dir, exist_ok=True)
                     shutil.move(file, target_dir)
                     self._log(f"Moved {file} → {target_dir}")
+                    messagebox.showinfo("Success", f"Moved {os.path.basename(file)}")
                 except Exception as e:
                     self._log(f"Error moving {file}: {e}")
+                    messagebox.showerror("Error", f"Failed to move {file}: {e}")
 
     # ----------------- Uninstaller -----------------
     def uninstaller(self):
@@ -290,6 +393,7 @@ class ModDownloader:
     def populate_appids(self):
         try:
             appids = []
+            os.makedirs(self.LUA_ST_DIR, exist_ok=True)
             for file in os.listdir(self.LUA_ST_DIR):
                 if file.endswith(".lua"):
                     appid = file[:-4]
@@ -320,6 +424,7 @@ class ModDownloader:
             return
         results = []
         try:
+            os.makedirs(self.LUA_ST_DIR, exist_ok=True)
             for file in os.listdir(self.LUA_ST_DIR):
                 if file.endswith(".lua"):
                     aid = file[:-4]
