@@ -28,11 +28,29 @@ Install Python 3.10+ and Firefox, then install the Python dependencies:
 python -m pip install -r requirements.txt
 ```
 
+On Arch Linux, if PySide6 is unavailable for your Python version from `pip`,
+install the distro package instead:
+
+```bash
+sudo pacman -S pyside6
+```
+
+If you use a virtual environment with the distro package, create it with system
+site packages enabled:
+
+```bash
+python -m venv --system-site-packages .venv
+source .venv/bin/activate
+```
+
 Run the app:
 
 ```bash
 python OpenSteamtools.py
 ```
+
+The GUI is built with Qt6/PySide6 and can run on Wayland without requiring
+Tkinter or XWayland.
 
 The mod downloader uses Selenium with Firefox. If `geckodriver` is installed in
 your `PATH`, it will be used automatically. Selenium Manager may also be able to

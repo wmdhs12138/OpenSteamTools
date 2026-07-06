@@ -1,5 +1,4 @@
 beautifulsoup4
+PySide6
 requests
 selenium
-ttkbootstrap
-tkinterdnd2
