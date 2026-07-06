@@ -66,6 +66,13 @@ def resolve_steam_config_dir():
     return candidates[0]
 
 
+def resolve_steam_root_dir(config_dir):
+    config_path = Path(config_dir)
+    if config_path.name == "config":
+        return config_path.parent
+    return config_path
+
+
 def resolve_geckodriver_path():
     env_path = os.environ.get("GECKODRIVER")
     if env_path and Path(env_path).expanduser().exists():
@@ -203,7 +210,8 @@ class OpenSteamToolsWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.steam_config_dir = resolve_steam_config_dir()
-        self.manifest_dir = str(self.steam_config_dir / "depotcache")
+        self.steam_root_dir = resolve_steam_root_dir(self.steam_config_dir)
+        self.manifest_dir = str(self.steam_root_dir / "depotcache")
         self.lua_st_dir = str(self.steam_config_dir / "stplug-in")
         self.driver_path = resolve_geckodriver_path()
         self.app_id = "383980"
@@ -324,6 +332,11 @@ class OpenSteamToolsWindow(QMainWindow):
         config_label.setObjectName("muted")
         config_label.setWordWrap(True)
         layout.addWidget(config_label)
+
+        root_label = QLabel(f"Steam root: {self.steam_root_dir}")
+        root_label.setObjectName("muted")
+        root_label.setWordWrap(True)
+        layout.addWidget(root_label)
 
         buttons = [
             ("Mod Downloader", self.mod_downloader),
@@ -483,6 +496,13 @@ class OpenSteamToolsWindow(QMainWindow):
         target_label.setObjectName("muted")
         target_label.setWordWrap(True)
         layout.addWidget(target_label)
+
+        note_label = QLabel(
+            "OpenSteamTools only copies these files. Steam does not load stplug-in Lua files by itself."
+        )
+        note_label.setObjectName("muted")
+        note_label.setWordWrap(True)
+        layout.addWidget(note_label)
 
         drop_area = DropArea()
         drop_area.files_dropped.connect(self.move_workshop_files)

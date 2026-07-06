@@ -18,7 +18,11 @@ On Linux, the app looks for Steam config directories in this order:
 4. `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/config`
 
 The Lua files are installed to `stplug-in` under the detected Steam config
-directory. Manifest files are installed to `depotcache`.
+directory. Manifest files are installed to `depotcache` under the detected Steam
+root directory.
+
+OpenSteamTools only copies files into place. Steam does not natively load
+`stplug-in` Lua files by itself.
 
 ## Install from source
 
