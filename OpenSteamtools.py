@@ -8,13 +8,14 @@ from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QColor, QPalette
 from shiboken6 import isValid
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFrame,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -155,22 +156,47 @@ class DropArea(QFrame):
         layout = QVBoxLayout(self)
         label = QLabel("Drop .lua and .manifest files here")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(label)
 
+    @staticmethod
+    def files_from_mime_data(mime_data):
+        files = []
+        if mime_data.hasUrls():
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    files.append(url.toLocalFile())
+        if not files and mime_data.hasText():
+            for line in mime_data.text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                url = QUrl(line)
+                if url.isLocalFile():
+                    files.append(url.toLocalFile())
+                elif os.path.exists(line):
+                    files.append(line)
+        return files
+
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
+        if self.files_from_mime_data(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if self.files_from_mime_data(event.mimeData()):
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dropEvent(self, event):
-        files = []
-        for url in event.mimeData().urls():
-            if url.isLocalFile():
-                files.append(url.toLocalFile())
+        files = self.files_from_mime_data(event.mimeData())
         if files:
             self.files_dropped.emit(files)
-        event.acceptProposedAction()
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
 
 class OpenSteamToolsWindow(QMainWindow):
@@ -461,17 +487,33 @@ class OpenSteamToolsWindow(QMainWindow):
         drop_area = DropArea()
         drop_area.files_dropped.connect(self.move_workshop_files)
         layout.addWidget(drop_area)
+
+        select_button = QPushButton("Select Files")
+        select_button.clicked.connect(self.select_workshop_files)
+        layout.addWidget(select_button)
+
         layout.addStretch()
         return page
+
+    def select_workshop_files(self):
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select Lua and Manifest Files",
+            str(Path.home()),
+            "Workshop files (*.lua *.manifest);;All files (*)",
+        )
+        if files:
+            self.move_workshop_files(files)
 
     def move_workshop_files(self, files):
         moved = []
         failed = []
         for file_path in files:
             target_dir = None
-            if file_path.endswith(".manifest"):
+            lower_path = file_path.lower()
+            if lower_path.endswith(".manifest"):
                 target_dir = self.manifest_dir
-            elif file_path.endswith(".lua"):
+            elif lower_path.endswith(".lua"):
                 target_dir = self.lua_st_dir
 
             if not target_dir:
